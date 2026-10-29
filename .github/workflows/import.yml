@@ -1,0 +1,56 @@
+name: Import VK photo archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "history = continue full import; sync = scan recent posts"
+        type: choice
+        options:
+          - history
+          - sync
+        default: history
+        required: true
+      posts_per_run:
+        description: "Maximum posts to inspect (1-500)"
+        required: true
+        default: "100"
+      restart_history:
+        description: "Reset history offset to zero (do this only to restart the full scan)"
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vk-photo-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run importer
+        env:
+          VK_ACCESS_TOKEN: ${{ secrets.VK_ACCESS_TOKEN }}
+          VK_GROUP_ID: ${{ secrets.VK_GROUP_ID }}
+          VK_API_VERSION: "5.199"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IMPORT_MODE: ${{ inputs.mode }}
+          POSTS_PER_RUN: ${{ inputs.posts_per_run }}
+          RESTART_IMPORT: ${{ inputs.restart_history }}
+        run: python import_vk.py
