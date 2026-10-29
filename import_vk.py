@@ -227,18 +227,20 @@ def set_offset(conn, offset):
 def main():
     batch_size = max(1, min(int(os.getenv("POSTS_PER_RUN", "100")), 500))
     restart = os.getenv("RESTART_IMPORT", "false").lower() == "true"
+    mode = os.getenv("IMPORT_MODE", "history").lower()
+    if mode not in ("history", "sync"):
+        raise ValueError("IMPORT_MODE must be 'history' or 'sync'")
     # VK expects a positive community id in configuration; wall.get requires a negative owner_id.
     with db_connect() as conn:
-        offset = get_offset(conn, restart)
+        offset = 0 if mode == "sync" else get_offset(conn, restart)
         processed = 0
-        print(f"Starting VK wall import: group={VK_GROUP_ID}, offset={offset}, batch={batch_size}")
+        print(f"Starting VK wall import: group={VK_GROUP_ID}, mode={mode}, offset={offset}, batch={batch_size}")
         while processed < batch_size:
             count = min(PAGE_SIZE, batch_size - processed)
             result = vk_call("wall.get", owner_id=-VK_GROUP_ID, count=count, offset=offset, filter="all")
             posts = result.get("items", [])
             if not posts:
-                set_offset(conn, 0)
-                print("Reached end of wall. Offset reset to 0; next run can sync recent posts.")
+                print("Reached end of wall history. Progress offset kept; use mode=sync to scan recent posts.")
                 break
             for post in posts:
                 post_db_id = get_or_create_post(conn, post)
@@ -247,11 +249,11 @@ def main():
                     save_photo(conn, post_db_id, photo, largest, position)
                 processed += 1
             offset += len(posts)
-            set_offset(conn, offset)
+            if mode == "history":
+                set_offset(conn, offset)
             print(f"Progress: processed {processed}/{batch_size} posts this run; next offset={offset}")
             if len(posts) < count:
-                set_offset(conn, 0)
-                print("Reached end of wall. Offset reset to 0.")
+                print("Reached end of wall history.")
                 break
             time.sleep(0.35)
         print("Import run completed.")
